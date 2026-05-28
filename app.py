@@ -4,51 +4,92 @@ import requests
 
 app = Flask(__name__)
 
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
+CLIENT_ID=os.getenv("CLIENT_ID")
+CLIENT_SECRET=os.getenv("CLIENT_SECRET")
+REDIRECT_URI=os.getenv("REDIRECT_URI")
 
-ACCESS_TOKEN = None
+ACCESS_TOKEN=None
+
 
 @app.route("/")
 def home():
 
     global ACCESS_TOKEN
 
-    if ACCESS_TOKEN:
+    if not ACCESS_TOKEN:
 
-        headers={
-            "Authorization":f"Bearer {ACCESS_TOKEN}"
-        }
+        return """
 
-        url="https://api.mercadolibre.com/users/me"
+        <h1>MercadoLibre Stock</h1>
 
-        data=requests.get(
-            url,
+        <a href='/login'>
+
+        LOGIN MERCADOLIBRE
+
+        </a>
+
+        """
+
+    headers={
+
+        "Authorization":f"Bearer {ACCESS_TOKEN}"
+
+    }
+
+    me=requests.get(
+
+        "https://api.mercadolibre.com/users/me",
+
+        headers=headers
+
+    ).json()
+
+    user_id=me["id"]
+
+    items=requests.get(
+
+        f"https://api.mercadolibre.com/users/{user_id}/items/search",
+
+        headers=headers
+
+    ).json()
+
+    publicaciones=items["results"]
+
+    html="<h1>Mis publicaciones</h1>"
+
+    html+="<br>Total:"+str(len(publicaciones))
+
+    html+="<hr>"
+
+    for item in publicaciones[:100]:
+
+        producto=requests.get(
+
+            f"https://api.mercadolibre.com/items/{item}",
+
             headers=headers
+
         ).json()
 
-        return f"""
-        <h1>Conectado</h1>
+        titulo=producto["title"]
 
-        Usuario:
+        stock=producto["available_quantity"]
+
+        html+=f"""
+
+        <b>{titulo}</b>
+
+        <br>
+
+        Stock: {stock}
 
         <br><br>
 
-        {data}
         """
 
-    return """
+    return html
 
-    <h1>MercadoLibre Stock</h1>
-
-    <a href='/login'>
-
-    LOGIN MERCADOLIBRE
-
-    </a>
-
-    """
 
 @app.route("/login")
 def login():
