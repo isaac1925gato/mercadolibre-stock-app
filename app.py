@@ -60,11 +60,7 @@ def home():
 
         <h1>MercadoLibre Stock</h1>
 
-        <a href='/login'>
-
-        LOGIN MERCADOLIBRE
-
-        </a>
+        <a href='/login'>LOGIN MERCADOLIBRE</a>
 
         """
 
@@ -74,7 +70,37 @@ def home():
 
         ""
 
-    ).lower().strip()
+    ).strip().lower()
+
+    html=f"""
+
+    <h1>Buscador MercadoLibre</h1>
+
+    <form>
+
+    <input
+    name=q
+    value="{buscar}"
+    style="width:400px;font-size:30px;">
+
+    <button>
+
+    Buscar
+
+    </button>
+
+    </form>
+
+    <hr>
+
+    """
+
+    if buscar=="":
+
+        html+="Escribe algo para buscar publicaciones"
+
+        return html
+
 
     resultados=[]
 
@@ -98,7 +124,7 @@ def home():
 
         )
 
-        if buscar=="" or buscar in titulo.lower():
+        if buscar in titulo.lower():
 
             resultados.append(
 
@@ -106,26 +132,7 @@ def home():
 
             )
 
-    html=f"""
-
-    <h1>Buscador MercadoLibre</h1>
-
-    <form>
-
-    <input
-    name=q
-    value="{buscar}"
-    style="width:400px;font-size:30px;">
-
-    <button>
-
-    Buscar
-
-    </button>
-
-    </form>
-
-    <hr>
+    html+=f"""
 
     Coincidencias:{len(resultados)}
 
@@ -137,49 +144,22 @@ def home():
 
         itemid=item["id"]
 
-        titulo=item["title"]
-
-        stock=item.get(
-
-            "available_quantity",
-
-            0
-
-        )
-
-        estado=item.get(
-
-            "status",
-
-            ""
-
-        )
-
         html+=f"""
 
-        <h3>
+        <h3>{item["title"]}</h3>
 
-        {titulo}
+        Stock:{item.get("available_quantity",0)}<br>
 
-        </h3>
-
-        Stock:{stock}<br>
-
-        Estado:{estado}
-
-        <br><br>
+        Estado:{item.get("status","")}<br><br>
 
         <form action="/stock">
 
-        <input
-        type=hidden
-        name=id
-        value="{itemid}">
+        <input type=hidden name=id value="{itemid}">
 
         <input
         name=stock
-        value="{stock}"
-        style="width:80px;">
+        value="{item.get("available_quantity",0)}"
+        style="width:70px;">
 
         <button>
 
@@ -191,19 +171,11 @@ def home():
 
         <br>
 
-        <a href="/pause?id={itemid}">
-
-        PAUSAR
-
-        </a>
+        <a href="/pause?id={itemid}">PAUSAR</a>
 
         |
 
-        <a href="/activate?id={itemid}">
-
-        ACTIVAR
-
-        </a>
+        <a href="/activate?id={itemid}">ACTIVAR</a>
 
         <hr>
 
@@ -216,17 +188,9 @@ def home():
 
 def stock():
 
-    itemid=request.args.get(
+    itemid=request.args.get("id")
 
-        "id"
-
-    )
-
-    stock=request.args.get(
-
-        "stock"
-
-    )
+    stock=request.args.get("stock")
 
     requests.put(
 
@@ -249,11 +213,7 @@ def stock():
 
 def pause():
 
-    itemid=request.args.get(
-
-        "id"
-
-    )
+    itemid=request.args.get("id")
 
     requests.put(
 
@@ -276,11 +236,7 @@ def pause():
 
 def activate():
 
-    itemid=request.args.get(
-
-        "id"
-
-    )
+    itemid=request.args.get("id")
 
     requests.put(
 
@@ -305,11 +261,7 @@ def login():
 
     url=f"https://auth.mercadolibre.cl/authorization?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
 
-    return redirect(
-
-        url
-
-    )
+    return redirect(url)
 
 
 @app.route("/callback")
@@ -320,11 +272,7 @@ def callback():
 
     global REFRESH_TOKEN
 
-    code=request.args.get(
-
-        "code"
-
-    )
+    code=request.args.get("code")
 
     r=requests.post(
 
@@ -367,16 +315,6 @@ if __name__=="__main__":
 
         host="0.0.0.0",
 
-        port=int(
-
-            os.environ.get(
-
-                "PORT",
-
-                5000
-
-            )
-
-        )
+        port=int(os.environ.get("PORT",5000))
 
     )
