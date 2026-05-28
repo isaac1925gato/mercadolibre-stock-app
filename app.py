@@ -23,6 +23,31 @@ def headers():
     }
 
 
+def obtener_items():
+
+    r=requests.get(
+
+        f"https://api.mercadolibre.com/users/{USER_ID}/items/search",
+
+        headers=headers(),
+
+        params={
+
+            "limit":200
+
+        }
+
+    ).json()
+
+    return r.get(
+
+        "results",
+
+        []
+
+    )
+
+
 @app.route("/")
 
 def home():
@@ -49,59 +74,37 @@ def home():
 
         ""
 
-    ).strip().lower()
+    ).lower().strip()
 
-    encontrados=[]
+    resultados=[]
 
-    if buscar!="":
+    ids=obtener_items()
 
-        resultados=requests.get(
+    for itemid in ids:
 
-            f"https://api.mercadolibre.com/users/{USER_ID}/items/search",
+        item=requests.get(
 
-            headers=headers(),
+            f"https://api.mercadolibre.com/items/{itemid}",
 
-            params={
-
-                "limit":200
-
-            }
+            headers=headers()
 
         ).json()
 
-        ids=resultados.get(
+        titulo=item.get(
 
-            "results",
+            "title",
 
-            []
+            ""
 
         )
 
-        for itemid in ids:
+        if buscar=="" or buscar in titulo.lower():
 
-            item=requests.get(
+            resultados.append(
 
-                f"https://api.mercadolibre.com/items/{itemid}",
-
-                headers=headers()
-
-            ).json()
-
-            titulo=item.get(
-
-                "title",
-
-                ""
+                item
 
             )
-
-            if buscar in titulo.lower():
-
-                encontrados.append(
-
-                    item
-
-                )
 
     html=f"""
 
@@ -110,9 +113,9 @@ def home():
     <form>
 
     <input
-    name='q'
-    value='{buscar}'
-    style='width:350px;font-size:30px;'>
+    name=q
+    value="{buscar}"
+    style="width:400px;font-size:30px;">
 
     <button>
 
@@ -124,29 +127,176 @@ def home():
 
     <hr>
 
-    Coincidencias: {len(encontrados)}
+    Coincidencias:{len(resultados)}
 
     <hr>
 
     """
 
-    for item in encontrados:
+    for item in resultados:
+
+        itemid=item["id"]
+
+        titulo=item["title"]
+
+        stock=item.get(
+
+            "available_quantity",
+
+            0
+
+        )
+
+        estado=item.get(
+
+            "status",
+
+            ""
+
+        )
 
         html+=f"""
 
         <h3>
 
-        {item['title']}
+        {titulo}
 
         </h3>
 
-        Stock: {item.get('available_quantity',0)}
+        Stock:{stock}<br>
+
+        Estado:{estado}
+
+        <br><br>
+
+        <form action="/stock">
+
+        <input
+        type=hidden
+        name=id
+        value="{itemid}">
+
+        <input
+        name=stock
+        value="{stock}"
+        style="width:80px;">
+
+        <button>
+
+        Cambiar Stock
+
+        </button>
+
+        </form>
+
+        <br>
+
+        <a href="/pause?id={itemid}">
+
+        PAUSAR
+
+        </a>
+
+        |
+
+        <a href="/activate?id={itemid}">
+
+        ACTIVAR
+
+        </a>
 
         <hr>
 
         """
 
     return html
+
+
+@app.route("/stock")
+
+def stock():
+
+    itemid=request.args.get(
+
+        "id"
+
+    )
+
+    stock=request.args.get(
+
+        "stock"
+
+    )
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{itemid}",
+
+        headers=headers(),
+
+        json={
+
+            "available_quantity":int(stock)
+
+        }
+
+    )
+
+    return redirect("/")
+
+
+@app.route("/pause")
+
+def pause():
+
+    itemid=request.args.get(
+
+        "id"
+
+    )
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{itemid}",
+
+        headers=headers(),
+
+        json={
+
+            "status":"paused"
+
+        }
+
+    )
+
+    return redirect("/")
+
+
+@app.route("/activate")
+
+def activate():
+
+    itemid=request.args.get(
+
+        "id"
+
+    )
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{itemid}",
+
+        headers=headers(),
+
+        json={
+
+            "status":"active"
+
+        }
+
+    )
+
+    return redirect("/")
 
 
 @app.route("/login")
