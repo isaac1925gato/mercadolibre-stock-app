@@ -11,6 +11,8 @@ REDIRECT_URI=os.getenv("REDIRECT_URI")
 ACCESS_TOKEN=None
 REFRESH_TOKEN=None
 
+USER_ID=2397796502
+
 
 def headers():
 
@@ -47,7 +49,7 @@ def home():
 
         ""
 
-    ).strip()
+    ).strip().lower()
 
     encontrados=[]
 
@@ -55,20 +57,17 @@ def home():
 
         resultados=requests.get(
 
-            "https://api.mercadolibre.com/users/2397796502/items/search",
+            f"https://api.mercadolibre.com/users/{USER_ID}/items/search",
 
             headers=headers(),
 
             params={
-
-                "search":buscar,
 
                 "limit":200
 
             }
 
         ).json()
-
 
         ids=resultados.get(
 
@@ -77,7 +76,6 @@ def home():
             []
 
         )
-
 
         for itemid in ids:
 
@@ -89,12 +87,21 @@ def home():
 
             ).json()
 
-            encontrados.append(
+            titulo=item.get(
 
-                item
+                "title",
+
+                ""
 
             )
 
+            if buscar in titulo.lower():
+
+                encontrados.append(
+
+                    item
+
+                )
 
     html=f"""
 
@@ -125,31 +132,15 @@ def home():
 
     for item in encontrados:
 
-        titulo=item.get(
-
-            "title",
-
-            ""
-
-        )
-
-        stock=item.get(
-
-            "available_quantity",
-
-            0
-
-        )
-
         html+=f"""
 
         <h3>
 
-        {titulo}
+        {item['title']}
 
         </h3>
 
-        Stock: {stock}
+        Stock: {item.get('available_quantity',0)}
 
         <hr>
 
