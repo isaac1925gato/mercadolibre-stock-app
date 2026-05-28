@@ -1,6 +1,7 @@
 from flask import Flask, redirect, request
 import os
 import requests
+import json
 
 app = Flask(__name__)
 
@@ -8,32 +9,22 @@ CLIENT_ID=os.getenv("CLIENT_ID")
 CLIENT_SECRET=os.getenv("CLIENT_SECRET")
 REDIRECT_URI=os.getenv("REDIRECT_URI")
 
-TOKEN_FILE="token.txt"
-
 ACCESS_TOKEN=None
 REFRESH_TOKEN=None
-
-USER_ID=2397796502
 
 
 def guardar_tokens():
 
-    global ACCESS_TOKEN
-    global REFRESH_TOKEN
+    data={
 
-    with open(
+        "access_token":ACCESS_TOKEN,
+        "refresh_token":REFRESH_TOKEN
 
-        TOKEN_FILE,
+    }
 
-        "w"
+    with open("token.txt","w") as f:
 
-    ) as f:
-
-        f.write(
-
-            ACCESS_TOKEN+"\n"+REFRESH_TOKEN
-
-        )
+        json.dump(data,f)
 
 
 def cargar_tokens():
@@ -43,19 +34,13 @@ def cargar_tokens():
 
     try:
 
-        with open(
+        with open("token.txt","r") as f:
 
-            TOKEN_FILE,
+            data=json.load(f)
 
-            "r"
+            ACCESS_TOKEN=data.get("access_token")
 
-        ) as f:
-
-            datos=f.read().splitlines()
-
-            ACCESS_TOKEN=datos[0]
-
-            REFRESH_TOKEN=datos[1]
+            REFRESH_TOKEN=data.get("refresh_token")
 
     except:
 
@@ -71,71 +56,48 @@ def renovar_token():
 
         return
 
-    r=requests.post(
+    try:
 
-        "https://api.mercadolibre.com/oauth/token",
+        r=requests.post(
 
-        data={
+            "https://api.mercadolibre.com/oauth/token",
 
-            "grant_type":"refresh_token",
+            data={
 
-            "client_id":CLIENT_ID,
+                "grant_type":"refresh_token",
+                "client_id":CLIENT_ID,
+                "client_secret":CLIENT_SECRET,
+                "refresh_token":REFRESH_TOKEN
 
-            "client_secret":CLIENT_SECRET,
+            }
 
-            "refresh_token":REFRESH_TOKEN
+        )
 
-        }
+        if r.status_code!=200:
 
-    )
-
-    if r.status_code==200:
+            return
 
         data=r.json()
 
-        ACCESS_TOKEN=data["access_token"]
+        ACCESS_TOKEN=data.get(
 
-        REFRESH_TOKEN=data["refresh_token"]
+            "access_token",
+            ACCESS_TOKEN
+
+        )
+
+        REFRESH_TOKEN=data.get(
+
+            "refresh_token",
+            REFRESH_TOKEN
+
+        )
 
         guardar_tokens()
 
+    except:
 
-def headers():
-
-    renovar_token()
-
-    return {
-
-        "Authorization":
-
-        f"Bearer {ACCESS_TOKEN}"
-
-    }
-
-
-def obtener_items():
-
-    r=requests.get(
-
-        f"https://api.mercadolibre.com/users/{USER_ID}/items/search",
-
-        headers=headers(),
-
-        params={
-
-            "limit":200
-
-        }
-
-    ).json()
-
-    return r.get(
-
-        "results",
-
-        []
-
-    )
+        pass
 
 
 cargar_tokens()
@@ -145,208 +107,149 @@ cargar_tokens()
 
 def home():
 
-    global ACCESS_TOKEN
-
-    if ACCESS_TOKEN is None:
-
-        return """
-
-        <h1>MercadoLibre Stock</h1>
-
-        <a href='/login'>
-
-        LOGIN MERCADOLIBRE
-
-        </a>
-
-        """
-
-    buscar=request.args.get(
-
-        "q",
-
-        ""
-
-    ).strip().lower()
+    q=request.args.get("q","").strip()
 
     html="""
 
-    <h1>Buscador MercadoLibre</h1>
+<h1>Buscador MercadoLibre</h1>
 
-    <form>
+<form>
 
-    <input
-    name=q
-    style='width:400px;font-size:30px;'>
+<input name='q' value='%s'>
 
-    <button>
+<button>Buscar</button>
 
-    Buscar
+</form>
 
-    </button>
+<hr>
 
-    </form>
+"""%q
 
-    <hr>
-
-    """
-
-    if buscar=="":
+    if q=="":
 
         html+="Escribe algo para buscar"
 
         return html
 
-    resultados=[]
+    renovar_token()
 
-    ids=obtener_items()
+    headers={
 
-    for itemid in ids:
+        "Authorization":f"Bearer {ACCESS_TOKEN}"
 
-        item=requests.get(
+    }
 
-            f"https://api.mercadolibre.com/items/{itemid}",
+    r=requests.get(
 
-            headers=headers()
+        "https://api.mercadolibre.com/users/me",
 
-        ).json()
+        headers=headers
 
-        if buscar in item["title"].lower():
+    )
 
-            resultados.append(
+    user=r.json()
 
-                item
+    user_id=user["id"]
 
-            )
+    publicaciones=[]
 
-    html+=f"Coincidencias:{len(resultados)}<hr>"
+    offset=0
 
-    for item in resultados:
+    limit=50
 
-        itemid=item["id"]
+    while True:
+
+        rr=requests.get(
+
+            f"https://api.mercadolibre.com/users/{user_id}/items/search?limit={limit}&offset={offset}",
+
+            headers=headers
+
+        )
+
+        data=rr.json()
+
+        ids=data["results"]
+
+        publicaciones.extend(ids)
+
+        offset+=limit
+
+        if len(ids)<limit:
+
+            break
+
+    coincidencias=[]
+
+    q=q.lower()
+
+    for item_id in publicaciones:
+
+        rr=requests.get(
+
+            f"https://api.mercadolibre.com/items/{item_id}",
+
+            headers=headers
+
+        )
+
+        item=rr.json()
+
+        titulo=item["title"]
+
+        if q in titulo.lower():
+
+            coincidencias.append(item)
+
+    html+=f"Coincidencias:{len(coincidencias)}<hr>"
+
+    for item in coincidencias:
 
         html+=f"""
 
-        <h3>{item['title']}</h3>
+<h2>{item['title']}</h2>
 
-        Stock:{item.get('available_quantity',0)}
+Stock:{item['available_quantity']}<br>
 
-        <br>
+Estado:{item['status']}<br><br>
 
-        Estado:{item.get('status','')}
+<form action='/stock' method='post'>
 
-        <br><br>
+<input hidden name='id' value='{item["id"]}'>
 
-        <form action='/stock'>
+<input name='stock'
 
-        <input type=hidden name=id value='{itemid}'>
+value='{item["available_quantity"]}'>
 
-        <input
-        name=stock
-        value='{item.get("available_quantity",0)}'>
+<button>
 
-        <button>
+Cambiar Stock
 
-        Cambiar Stock
+</button>
 
-        </button>
+</form>
 
-        </form>
+<br>
 
-        <br>
+<a href='/pause?id={item["id"]}'>
 
-        <a href='/pause?id={itemid}'>
+PAUSAR
 
-        PAUSAR
+</a>
 
-        </a>
+|
 
-        |
+<a href='/activate?id={item["id"]}'>
 
-        <a href='/activate?id={itemid}'>
+ACTIVAR
 
-        ACTIVAR
+</a>
 
-        </a>
+<hr>
 
-        <hr>
-
-        """
+"""
 
     return html
-
-
-@app.route("/stock")
-
-def stock():
-
-    requests.put(
-
-        f"https://api.mercadolibre.com/items/{request.args.get('id')}",
-
-        headers=headers(),
-
-        json={
-
-            "available_quantity":
-
-            int(
-
-                request.args.get(
-
-                    "stock"
-
-                )
-
-            )
-
-        }
-
-    )
-
-    return redirect("/")
-
-
-@app.route("/pause")
-
-def pause():
-
-    requests.put(
-
-        f"https://api.mercadolibre.com/items/{request.args.get('id')}",
-
-        headers=headers(),
-
-        json={
-
-            "status":"paused"
-
-        }
-
-    )
-
-    return redirect("/")
-
-
-@app.route("/activate")
-
-def activate():
-
-    requests.put(
-
-        f"https://api.mercadolibre.com/items/{request.args.get('id')}",
-
-        headers=headers(),
-
-        json={
-
-            "status":"active"
-
-        }
-
-    )
-
-    return redirect("/")
 
 
 @app.route("/login")
@@ -365,11 +268,7 @@ def callback():
     global ACCESS_TOKEN
     global REFRESH_TOKEN
 
-    code=request.args.get(
-
-        "code"
-
-    )
+    code=request.args.get("code")
 
     r=requests.post(
 
@@ -378,24 +277,129 @@ def callback():
         data={
 
             "grant_type":"authorization_code",
-
             "client_id":CLIENT_ID,
-
             "client_secret":CLIENT_SECRET,
-
             "code":code,
-
             "redirect_uri":REDIRECT_URI
 
         }
 
-    ).json()
+    )
 
-    ACCESS_TOKEN=r["access_token"]
+    data=r.json()
 
-    REFRESH_TOKEN=r["refresh_token"]
+    ACCESS_TOKEN=data["access_token"]
+
+    REFRESH_TOKEN=data["refresh_token"]
 
     guardar_tokens()
+
+    return """
+
+Conectado correctamente
+
+<br><br>
+
+<a href='/'>Ir inicio</a>
+
+"""
+
+
+@app.route("/pause")
+
+def pause():
+
+    renovar_token()
+
+    item=request.args.get("id")
+
+    headers={
+
+        "Authorization":f"Bearer {ACCESS_TOKEN}"
+
+    }
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{item}",
+
+        headers=headers,
+
+        json={
+
+            "status":"paused"
+
+        }
+
+    )
+
+    return redirect("/")
+
+
+@app.route("/activate")
+
+def activate():
+
+    renovar_token()
+
+    item=request.args.get("id")
+
+    headers={
+
+        "Authorization":f"Bearer {ACCESS_TOKEN}"
+
+    }
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{item}",
+
+        headers=headers,
+
+        json={
+
+            "status":"active"
+
+        }
+
+    )
+
+    return redirect("/")
+
+
+@app.route("/stock",methods=["POST"])
+
+def stock():
+
+    renovar_token()
+
+    item=request.form["id"]
+
+    cantidad=int(
+
+        request.form["stock"]
+
+    )
+
+    headers={
+
+        "Authorization":f"Bearer {ACCESS_TOKEN}"
+
+    }
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{item}",
+
+        headers=headers,
+
+        json={
+
+            "available_quantity":cantidad
+
+        }
+
+    )
 
     return redirect("/")
 
