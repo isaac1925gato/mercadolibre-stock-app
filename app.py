@@ -11,6 +11,15 @@ REDIRECT_URI=os.getenv("REDIRECT_URI")
 ACCESS_TOKEN=None
 
 
+def headers():
+
+    return {
+
+        "Authorization":f"Bearer {ACCESS_TOKEN}"
+
+    }
+
+
 @app.route("/")
 def home():
 
@@ -30,17 +39,11 @@ def home():
 
         """
 
-    headers={
-
-        "Authorization":f"Bearer {ACCESS_TOKEN}"
-
-    }
-
     me=requests.get(
 
         "https://api.mercadolibre.com/users/me",
 
-        headers=headers
+        headers=headers()
 
     ).json()
 
@@ -50,31 +53,31 @@ def home():
 
         f"https://api.mercadolibre.com/users/{user_id}/items/search",
 
-        headers=headers
+        headers=headers()
 
     ).json()
 
     publicaciones=items["results"]
 
-    html="<h1>Mis publicaciones</h1>"
-
-    html+="<br>Total:"+str(len(publicaciones))
+    html=f"<h1>Mis publicaciones ({len(publicaciones)})</h1>"
 
     html+="<hr>"
 
     for item in publicaciones[:100]:
 
-        producto=requests.get(
+        p=requests.get(
 
             f"https://api.mercadolibre.com/items/{item}",
 
-            headers=headers
+            headers=headers()
 
         ).json()
 
-        titulo=producto["title"]
+        titulo=p["title"]
 
-        stock=producto["available_quantity"]
+        stock=p["available_quantity"]
+
+        status=p["status"]
 
         html+=f"""
 
@@ -82,13 +85,77 @@ def home():
 
         <br>
 
+        ID: {item}
+
+        <br>
+
         Stock: {stock}
 
+        <br>
+
+        Estado: {status}
+
         <br><br>
+
+        <a href='/pause/{item}'>
+
+        PAUSAR
+
+        </a>
+
+        |
+
+        <a href='/activate/{item}'>
+
+        ACTIVAR
+
+        </a>
+
+        <hr>
 
         """
 
     return html
+
+
+@app.route("/pause/<itemid>")
+def pause(itemid):
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{itemid}",
+
+        headers=headers(),
+
+        json={
+
+            "status":"paused"
+
+        }
+
+    )
+
+    return redirect("/")
+
+
+@app.route("/activate/<itemid>")
+def activate(itemid):
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{itemid}",
+
+        headers=headers(),
+
+        json={
+
+            "status":"active"
+
+        }
+
+    )
+
+    return redirect("/")
 
 
 @app.route("/login")
@@ -126,9 +193,7 @@ def callback():
 
     )
 
-    data=response.json()
-
-    ACCESS_TOKEN=data["access_token"]
+    ACCESS_TOKEN=response.json()["access_token"]
 
     return redirect("/")
 
