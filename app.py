@@ -4,18 +4,20 @@ import requests
 
 app = Flask(__name__)
 
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
+CLIENT_ID=os.getenv("CLIENT_ID")
+CLIENT_SECRET=os.getenv("CLIENT_SECRET")
+REDIRECT_URI=os.getenv("REDIRECT_URI")
 
-ACCESS_TOKEN = None
+ACCESS_TOKEN=None
+
+MAX_ITEMS=200
 
 
 def headers():
 
     return {
 
-        "Authorization": f"Bearer {ACCESS_TOKEN}"
+        "Authorization":f"Bearer {ACCESS_TOKEN}"
 
     }
 
@@ -39,7 +41,9 @@ def home():
 
         """
 
-    me = requests.get(
+    buscar=request.args.get("q","").lower()
+
+    me=requests.get(
 
         "https://api.mercadolibre.com/users/me",
 
@@ -47,17 +51,15 @@ def home():
 
     ).json()
 
-    user_id = me["id"]
+    user_id=me["id"]
 
-    publicaciones = []
+    publicaciones=[]
 
-    offset = 0
+    offset=0
 
-    LIMITE_TOTAL = 200
+    while len(publicaciones)<MAX_ITEMS:
 
-    while len(publicaciones) < LIMITE_TOTAL:
-
-        data = requests.get(
+        data=requests.get(
 
             f"https://api.mercadolibre.com/users/{user_id}/items/search?limit=50&offset={offset}",
 
@@ -65,31 +67,49 @@ def home():
 
         ).json()
 
-        lote = data.get("results", [])
+        lote=data.get("results",[])
 
-        if len(lote) == 0:
+        if not lote:
 
             break
 
         publicaciones.extend(lote)
 
-        offset += 50
+        offset+=50
 
-    publicaciones = publicaciones[:LIMITE_TOTAL]
+    publicaciones=publicaciones[:MAX_ITEMS]
 
-    html = f"""
+    html=f"""
 
     <h1>Mis publicaciones</h1>
 
     Total:{len(publicaciones)}
 
+    <br><br>
+
+    <form>
+
+    Buscar:
+
+    <input name='q' value='{buscar}'>
+
+    <button>
+
+    Buscar
+
+    </button>
+
+    </form>
+
     <hr>
 
     """
 
+    encontrados=0
+
     for item in publicaciones:
 
-        p = requests.get(
+        p=requests.get(
 
             f"https://api.mercadolibre.com/items/{item}",
 
@@ -97,49 +117,94 @@ def home():
 
         ).json()
 
-        titulo = p.get("title", "Sin título")
+        titulo=p.get("title","")
 
-        stock = p.get("available_quantity", 0)
+        if buscar:
 
-        estado = p.get("status", "desconocido")
+            if buscar not in titulo.lower():
 
-        html += f"""
+                continue
+
+        encontrados+=1
+
+        stock=p.get("available_quantity",0)
+
+        estado=p.get("status","")
+
+        html+=f"""
 
         <b>{titulo}</b>
 
         <br>
 
-        ID: {item}
+        Stock:{stock}
 
         <br>
 
-        Stock: {stock}
+        Estado:{estado}
 
         <br>
 
-        Estado: {estado}
+        <form action='/stock/{item}' method='post'>
 
-        <br><br>
+        Nuevo stock:
 
-        <a href='/pause/{item}'>
+        <input
+        type='number'
+        name='stock'
+        value='{stock}'
+        style='width:70px'
+        >
 
-        PAUSAR
+        <button>
 
-        </a>
+        Actualizar Stock
+
+        </button>
+
+        </form>
+
+        <br>
+
+        <a href='/pause/{item}'>PAUSAR</a>
 
         |
 
-        <a href='/activate/{item}'>
-
-        ACTIVAR
-
-        </a>
+        <a href='/activate/{item}'>ACTIVAR</a>
 
         <hr>
 
         """
 
+    html+="Mostrando:"+str(encontrados)
+
     return html
+
+
+@app.route("/stock/<itemid>",methods=["POST"])
+def stock(itemid):
+
+    nuevo=int(
+
+        request.form["stock"]
+
+    )
+
+    requests.put(
+
+        f"https://api.mercadolibre.com/items/{itemid}",
+
+        headers=headers(),
+
+        json={
+
+            "available_quantity":nuevo
+
+        }
+
+    )
+
+    return redirect("/")
 
 
 @app.route("/pause/<itemid>")
@@ -153,7 +218,7 @@ def pause(itemid):
 
         json={
 
-            "status": "paused"
+            "status":"paused"
 
         }
 
@@ -173,7 +238,7 @@ def activate(itemid):
 
         json={
 
-            "status": "active"
+            "status":"active"
 
         }
 
@@ -185,9 +250,11 @@ def activate(itemid):
 @app.route("/login")
 def login():
 
-    url = f"https://auth.mercadolibre.cl/authorization?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
+    return redirect(
 
-    return redirect(url)
+        f"https://auth.mercadolibre.cl/authorization?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
+
+    )
 
 
 @app.route("/callback")
@@ -195,39 +262,39 @@ def callback():
 
     global ACCESS_TOKEN
 
-    code = request.args.get("code")
+    code=request.args.get("code")
 
-    response = requests.post(
+    r=requests.post(
 
         "https://api.mercadolibre.com/oauth/token",
 
         data={
 
-            "grant_type": "authorization_code",
+            "grant_type":"authorization_code",
 
-            "client_id": CLIENT_ID,
+            "client_id":CLIENT_ID,
 
-            "client_secret": CLIENT_SECRET,
+            "client_secret":CLIENT_SECRET,
 
-            "code": code,
+            "code":code,
 
-            "redirect_uri": REDIRECT_URI
+            "redirect_uri":REDIRECT_URI
 
         }
 
     )
 
-    ACCESS_TOKEN = response.json()["access_token"]
+    ACCESS_TOKEN=r.json()["access_token"]
 
     return redirect("/")
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
 
     app.run(
 
         host="0.0.0.0",
 
-        port=int(os.environ.get("PORT", 5000))
+        port=int(os.environ.get("PORT",5000))
 
     )
