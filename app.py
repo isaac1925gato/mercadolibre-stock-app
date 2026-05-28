@@ -10,8 +10,6 @@ REDIRECT_URI=os.getenv("REDIRECT_URI")
 
 ACCESS_TOKEN=None
 
-MAX_ITEMS=200
-
 
 def headers():
 
@@ -41,57 +39,26 @@ def home():
 
         """
 
-    buscar=request.args.get("q","").lower()
+    buscar=request.args.get(
 
-    me=requests.get(
+        "q",
 
-        "https://api.mercadolibre.com/users/me",
+        ""
 
-        headers=headers()
+    ).strip()
 
-    ).json()
+    html="""
 
-    user_id=me["id"]
-
-    publicaciones=[]
-
-    offset=0
-
-    while len(publicaciones)<MAX_ITEMS:
-
-        data=requests.get(
-
-            f"https://api.mercadolibre.com/users/{user_id}/items/search?limit=50&offset={offset}",
-
-            headers=headers()
-
-        ).json()
-
-        lote=data.get("results",[])
-
-        if not lote:
-
-            break
-
-        publicaciones.extend(lote)
-
-        offset+=50
-
-    publicaciones=publicaciones[:MAX_ITEMS]
-
-    html=f"""
-
-    <h1>Mis publicaciones</h1>
-
-    Total:{len(publicaciones)}
-
-    <br><br>
+    <h1>Buscador MercadoLibre</h1>
 
     <form>
 
-    Buscar:
-
-    <input name='q' value='{buscar}'>
+    <input
+    name='q'
+    value='{}'
+    placeholder='Buscar producto'
+    style='width:300px;font-size:20px'
+    >
 
     <button>
 
@@ -103,33 +70,71 @@ def home():
 
     <hr>
 
+    """.format(buscar)
+
+    if buscar=="":
+
+        html+="Escribe algo para buscar"
+
+        return html
+
+    resultados=requests.get(
+
+        "https://api.mercadolibre.com/sites/MLC/search",
+
+        headers=headers(),
+
+        params={
+
+            "seller_id":"2397796502",
+
+            "q":buscar,
+
+            "limit":50
+
+        }
+
+    ).json()
+
+    encontrados=resultados.get(
+
+        "results",
+
+        []
+
+    )
+
+    html+=f"""
+
+    Coincidencias:
+
+    {len(encontrados)}
+
+    <hr>
+
     """
 
-    encontrados=0
+    for p in encontrados:
 
-    for item in publicaciones:
+        itemid=p["id"]
 
-        p=requests.get(
+        titulo=p["title"]
 
-            f"https://api.mercadolibre.com/items/{item}",
+        stock=p.get(
 
-            headers=headers()
+            "available_quantity",
 
-        ).json()
+            0
 
-        titulo=p.get("title","")
+        )
 
-        if buscar:
+        estado=p.get(
 
-            if buscar not in titulo.lower():
+            "status",
 
-                continue
+            ""
 
-        encontrados+=1
-
-        stock=p.get("available_quantity",0)
-
-        estado=p.get("status","")
+        )
 
         html+=f"""
 
@@ -137,17 +142,15 @@ def home():
 
         <br>
 
-        Stock:{stock}
+        Stock: {stock}
 
         <br>
 
-        Estado:{estado}
+        Estado: {estado}
 
         <br>
 
-        <form action='/stock/{item}' method='post'>
-
-        Nuevo stock:
+        <form action='/stock/{itemid}' method='post'>
 
         <input
         type='number'
@@ -158,7 +161,7 @@ def home():
 
         <button>
 
-        Actualizar Stock
+        Cambiar Stock
 
         </button>
 
@@ -166,17 +169,23 @@ def home():
 
         <br>
 
-        <a href='/pause/{item}'>PAUSAR</a>
+        <a href='/pause/{itemid}'>
+
+        PAUSAR
+
+        </a>
 
         |
 
-        <a href='/activate/{item}'>ACTIVAR</a>
+        <a href='/activate/{itemid}'>
+
+        ACTIVAR
+
+        </a>
 
         <hr>
 
         """
-
-    html+="Mostrando:"+str(encontrados)
 
     return html
 
@@ -262,7 +271,11 @@ def callback():
 
     global ACCESS_TOKEN
 
-    code=request.args.get("code")
+    code=request.args.get(
+
+        "code"
+
+    )
 
     r=requests.post(
 
@@ -284,7 +297,11 @@ def callback():
 
     )
 
-    ACCESS_TOKEN=r.json()["access_token"]
+    ACCESS_TOKEN=r.json()[
+
+        "access_token"
+
+    ]
 
     return redirect("/")
 
@@ -295,6 +312,16 @@ if __name__=="__main__":
 
         host="0.0.0.0",
 
-        port=int(os.environ.get("PORT",5000))
+        port=int(
+
+            os.environ.get(
+
+                "PORT",
+
+                5000
+
+            )
+
+        )
 
     )
