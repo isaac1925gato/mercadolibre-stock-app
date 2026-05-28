@@ -9,6 +9,7 @@ CLIENT_SECRET=os.getenv("CLIENT_SECRET")
 REDIRECT_URI=os.getenv("REDIRECT_URI")
 
 ACCESS_TOKEN=None
+REFRESH_TOKEN=None
 
 
 def headers():
@@ -21,11 +22,12 @@ def headers():
 
 
 @app.route("/")
+
 def home():
 
     global ACCESS_TOKEN
 
-    if not ACCESS_TOKEN:
+    if ACCESS_TOKEN is None:
 
         return """
 
@@ -47,7 +49,54 @@ def home():
 
     ).strip()
 
-    html="""
+    encontrados=[]
+
+    if buscar!="":
+
+        resultados=requests.get(
+
+            "https://api.mercadolibre.com/users/2397796502/items/search",
+
+            headers=headers(),
+
+            params={
+
+                "search":buscar,
+
+                "limit":200
+
+            }
+
+        ).json()
+
+
+        ids=resultados.get(
+
+            "results",
+
+            []
+
+        )
+
+
+        for itemid in ids:
+
+            item=requests.get(
+
+                f"https://api.mercadolibre.com/items/{itemid}",
+
+                headers=headers()
+
+            ).json()
+
+            encontrados.append(
+
+                item
+
+            )
+
+
+    html=f"""
 
     <h1>Buscador MercadoLibre</h1>
 
@@ -55,10 +104,8 @@ def home():
 
     <input
     name='q'
-    value='{}'
-    placeholder='Buscar producto'
-    style='width:300px;font-size:20px'
-    >
+    value='{buscar}'
+    style='width:350px;font-size:30px;'>
 
     <button>
 
@@ -70,57 +117,23 @@ def home():
 
     <hr>
 
-    """.format(buscar)
-
-    if buscar=="":
-
-        html+="Escribe algo para buscar"
-
-        return html
-
-    resultados=requests.get(
-
-        "https://api.mercadolibre.com/sites/MLC/search",
-
-        headers=headers(),
-
-        params={
-
-            "seller_id":"2397796502",
-
-            "q":buscar,
-
-            "limit":50
-
-        }
-
-    ).json()
-
-    encontrados=resultados.get(
-
-        "results",
-
-        []
-
-    )
-
-    html+=f"""
-
-    Coincidencias:
-
-    {len(encontrados)}
+    Coincidencias: {len(encontrados)}
 
     <hr>
 
     """
 
-    for p in encontrados:
+    for item in encontrados:
 
-        itemid=p["id"]
+        titulo=item.get(
 
-        titulo=p["title"]
+            "title",
 
-        stock=p.get(
+            ""
+
+        )
+
+        stock=item.get(
 
             "available_quantity",
 
@@ -128,60 +141,15 @@ def home():
 
         )
 
-        estado=p.get(
-
-            "status",
-
-            ""
-
-        )
-
         html+=f"""
 
-        <b>{titulo}</b>
+        <h3>
 
-        <br>
+        {titulo}
+
+        </h3>
 
         Stock: {stock}
-
-        <br>
-
-        Estado: {estado}
-
-        <br>
-
-        <form action='/stock/{itemid}' method='post'>
-
-        <input
-        type='number'
-        name='stock'
-        value='{stock}'
-        style='width:70px'
-        >
-
-        <button>
-
-        Cambiar Stock
-
-        </button>
-
-        </form>
-
-        <br>
-
-        <a href='/pause/{itemid}'>
-
-        PAUSAR
-
-        </a>
-
-        |
-
-        <a href='/activate/{itemid}'>
-
-        ACTIVAR
-
-        </a>
 
         <hr>
 
@@ -190,86 +158,26 @@ def home():
     return html
 
 
-@app.route("/stock/<itemid>",methods=["POST"])
-def stock(itemid):
-
-    nuevo=int(
-
-        request.form["stock"]
-
-    )
-
-    requests.put(
-
-        f"https://api.mercadolibre.com/items/{itemid}",
-
-        headers=headers(),
-
-        json={
-
-            "available_quantity":nuevo
-
-        }
-
-    )
-
-    return redirect("/")
-
-
-@app.route("/pause/<itemid>")
-def pause(itemid):
-
-    requests.put(
-
-        f"https://api.mercadolibre.com/items/{itemid}",
-
-        headers=headers(),
-
-        json={
-
-            "status":"paused"
-
-        }
-
-    )
-
-    return redirect("/")
-
-
-@app.route("/activate/<itemid>")
-def activate(itemid):
-
-    requests.put(
-
-        f"https://api.mercadolibre.com/items/{itemid}",
-
-        headers=headers(),
-
-        json={
-
-            "status":"active"
-
-        }
-
-    )
-
-    return redirect("/")
-
-
 @app.route("/login")
+
 def login():
+
+    url=f"https://auth.mercadolibre.cl/authorization?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
 
     return redirect(
 
-        f"https://auth.mercadolibre.cl/authorization?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
+        url
 
     )
 
 
 @app.route("/callback")
+
 def callback():
 
     global ACCESS_TOKEN
+
+    global REFRESH_TOKEN
 
     code=request.args.get(
 
@@ -295,13 +203,19 @@ def callback():
 
         }
 
-    )
+    ).json()
 
-    ACCESS_TOKEN=r.json()[
+    ACCESS_TOKEN=r.get(
 
         "access_token"
 
-    ]
+    )
+
+    REFRESH_TOKEN=r.get(
+
+        "refresh_token"
+
+    )
 
     return redirect("/")
 
