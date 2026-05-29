@@ -9,251 +9,148 @@ CLIENT_ID=os.getenv("CLIENT_ID")
 CLIENT_SECRET=os.getenv("CLIENT_SECRET")
 REDIRECT_URI=os.getenv("REDIRECT_URI")
 
-ACCESS_TOKEN=None
-REFRESH_TOKEN=None
+TOKEN_FILE="token.txt"
 
 
-def guardar_tokens():
+def guardar_token(data):
 
-    data={
-
-        "access_token":ACCESS_TOKEN,
-        "refresh_token":REFRESH_TOKEN
-
-    }
-
-    with open("token.txt","w") as f:
-
+    with open(TOKEN_FILE,"w") as f:
         json.dump(data,f)
 
 
-def cargar_tokens():
+def cargar_token():
 
-    global ACCESS_TOKEN
-    global REFRESH_TOKEN
+    if not os.path.exists(TOKEN_FILE):
+        return None
 
-    try:
-
-        with open("token.txt","r") as f:
-
-            data=json.load(f)
-
-            ACCESS_TOKEN=data.get("access_token")
-
-            REFRESH_TOKEN=data.get("refresh_token")
-
-    except:
-
-        pass
+    with open(TOKEN_FILE,"r") as f:
+        return json.load(f)
 
 
-def renovar_token():
+def get_access_token():
 
-    global ACCESS_TOKEN
-    global REFRESH_TOKEN
+    data=cargar_token()
 
-    if REFRESH_TOKEN is None:
+    if not data:
+        return None
 
-        return
-
-    try:
-
-        r=requests.post(
-
-            "https://api.mercadolibre.com/oauth/token",
-
-            data={
-
-                "grant_type":"refresh_token",
-                "client_id":CLIENT_ID,
-                "client_secret":CLIENT_SECRET,
-                "refresh_token":REFRESH_TOKEN
-
-            }
-
-        )
-
-        if r.status_code!=200:
-
-            return
-
-        data=r.json()
-
-        ACCESS_TOKEN=data.get(
-
-            "access_token",
-            ACCESS_TOKEN
-
-        )
-
-        REFRESH_TOKEN=data.get(
-
-            "refresh_token",
-            REFRESH_TOKEN
-
-        )
-
-        guardar_tokens()
-
-    except:
-
-        pass
-
-
-cargar_tokens()
+    return data["access_token"]
 
 
 @app.route("/")
-
 def home():
 
     q=request.args.get("q","").strip()
 
     html="""
+    <h1>Buscador MercadoLibre</h1>
 
-<h1>Buscador MercadoLibre</h1>
+    <form>
 
-<form>
+    <input name='q' value='{0}'>
 
-<input name='q' value='%s'>
+    <button>Buscar</button>
 
-<button>Buscar</button>
+    </form>
 
-</form>
-
-<hr>
-
-"""%q
+    <hr>
+    """.format(q)
 
     if q=="":
 
-        html+="Escribe algo para buscar"
+        return html+"Escribe algo para buscar"
 
-        return html
+    access_token=get_access_token()
 
-    renovar_token()
+    if not access_token:
+
+        return html+"<a href='/login'>LOGIN MERCADOLIBRE</a>"
 
     headers={
-
-        "Authorization":f"Bearer {ACCESS_TOKEN}"
-
+        "Authorization":f"Bearer {access_token}"
     }
 
-    r=requests.get(
-
+    me=requests.get(
         "https://api.mercadolibre.com/users/me",
+        headers=headers
+    ).json()
+
+    user_id=me["id"]
+
+    search=requests.get(
+
+        f"https://api.mercadolibre.com/users/{user_id}/items/search?limit=200",
 
         headers=headers
 
-    )
+    ).json()
 
-    user=r.json()
-
-    user_id=user["id"]
-
-    publicaciones=[]
-
-    offset=0
-
-    limit=50
-
-    while True:
-
-        rr=requests.get(
-
-            f"https://api.mercadolibre.com/users/{user_id}/items/search?limit={limit}&offset={offset}",
-
-            headers=headers
-
-        )
-
-        data=rr.json()
-
-        ids=data["results"]
-
-        publicaciones.extend(ids)
-
-        offset+=limit
-
-        if len(ids)<limit:
-
-            break
+    ids=search.get("results",[])
 
     coincidencias=[]
 
-    q=q.lower()
+    for item_id in ids:
 
-    for item_id in publicaciones:
-
-        rr=requests.get(
+        detalle=requests.get(
 
             f"https://api.mercadolibre.com/items/{item_id}",
 
             headers=headers
 
-        )
+        ).json()
 
-        item=rr.json()
+        titulo=detalle.get("title","")
 
-        titulo=item["title"]
+        if q.lower() in titulo.lower():
 
-        if q in titulo.lower():
+            coincidencias.append(detalle)
 
-            coincidencias.append(item)
-
-    html+=f"Coincidencias:{len(coincidencias)}<hr>"
+    html+=f"<p>Coincidencias:{len(coincidencias)}</p><hr>"
 
     for item in coincidencias:
 
+        item_id=item.get("id","")
+
+        titulo=item.get("title","Sin titulo")
+
+        stock=item.get("available_quantity",0)
+
+        estado=item.get("status","")
+
         html+=f"""
 
-<h2>{item['title']}</h2>
+        <h2>{titulo}</h2>
 
-Stock:{item['available_quantity']}<br>
+        Stock:{stock}<br>
 
-Estado:{item['status']}<br><br>
+        Estado:{estado}<br><br>
 
-<form action='/stock' method='post'>
+        <form action='/stock' method='post'>
 
-<input hidden name='id' value='{item["id"]}'>
+        <input type='hidden' name='item_id' value='{item_id}'>
 
-<input name='stock'
+        <input name='stock' value='{stock}'>
 
-value='{item["available_quantity"]}'>
+        <button>Cambiar Stock</button>
 
-<button>
+        </form>
 
-Cambiar Stock
+        <br>
 
-</button>
+        <a href='/pause/{item_id}'>PAUSAR</a>
 
-</form>
+        |
 
-<br>
+        <a href='/activate/{item_id}'>ACTIVAR</a>
 
-<a href='/pause?id={item["id"]}'>
+        <hr>
 
-PAUSAR
-
-</a>
-
-|
-
-<a href='/activate?id={item["id"]}'>
-
-ACTIVAR
-
-</a>
-
-<hr>
-
-"""
+        """
 
     return html
 
 
 @app.route("/login")
-
 def login():
 
     url=f"https://auth.mercadolibre.cl/authorization?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}"
@@ -262,19 +159,15 @@ def login():
 
 
 @app.route("/callback")
-
 def callback():
-
-    global ACCESS_TOKEN
-    global REFRESH_TOKEN
 
     code=request.args.get("code")
 
-    r=requests.post(
+    response=requests.post(
 
         "https://api.mercadolibre.com/oauth/token",
 
-        data={
+        json={
 
             "grant_type":"authorization_code",
             "client_id":CLIENT_ID,
@@ -284,44 +177,27 @@ def callback():
 
         }
 
-    )
+    ).json()
 
-    data=r.json()
+    guardar_token(response)
 
-    ACCESS_TOKEN=data["access_token"]
-
-    REFRESH_TOKEN=data["refresh_token"]
-
-    guardar_tokens()
-
-    return """
-
-Conectado correctamente
-
-<br><br>
-
-<a href='/'>Ir inicio</a>
-
-"""
+    return redirect("/")
 
 
-@app.route("/pause")
+@app.route("/pause/<item_id>")
+def pause(item_id):
 
-def pause():
-
-    renovar_token()
-
-    item=request.args.get("id")
+    token=get_access_token()
 
     headers={
 
-        "Authorization":f"Bearer {ACCESS_TOKEN}"
+        "Authorization":f"Bearer {token}"
 
     }
 
     requests.put(
 
-        f"https://api.mercadolibre.com/items/{item}",
+        f"https://api.mercadolibre.com/items/{item_id}",
 
         headers=headers,
 
@@ -336,23 +212,20 @@ def pause():
     return redirect("/")
 
 
-@app.route("/activate")
+@app.route("/activate/<item_id>")
+def activate(item_id):
 
-def activate():
-
-    renovar_token()
-
-    item=request.args.get("id")
+    token=get_access_token()
 
     headers={
 
-        "Authorization":f"Bearer {ACCESS_TOKEN}"
+        "Authorization":f"Bearer {token}"
 
     }
 
     requests.put(
 
-        f"https://api.mercadolibre.com/items/{item}",
+        f"https://api.mercadolibre.com/items/{item_id}",
 
         headers=headers,
 
@@ -368,34 +241,29 @@ def activate():
 
 
 @app.route("/stock",methods=["POST"])
-
 def stock():
 
-    renovar_token()
+    token=get_access_token()
 
-    item=request.form["id"]
+    item_id=request.form["item_id"]
 
-    cantidad=int(
-
-        request.form["stock"]
-
-    )
+    stock=int(request.form["stock"])
 
     headers={
 
-        "Authorization":f"Bearer {ACCESS_TOKEN}"
+        "Authorization":f"Bearer {token}"
 
     }
 
     requests.put(
 
-        f"https://api.mercadolibre.com/items/{item}",
+        f"https://api.mercadolibre.com/items/{item_id}",
 
         headers=headers,
 
         json={
 
-            "available_quantity":cantidad
+            "available_quantity":stock
 
         }
 
@@ -410,16 +278,6 @@ if __name__=="__main__":
 
         host="0.0.0.0",
 
-        port=int(
-
-            os.environ.get(
-
-                "PORT",
-
-                5000
-
-            )
-
-        )
+        port=int(os.environ.get("PORT",5000))
 
     )
